@@ -1,12 +1,12 @@
-import React, { useState, useCallback, useRef } from 'react';
 import * as pdfjs from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import Tesseract from 'tesseract.js';
 import TurndownService from 'turndown';
 import { Upload, FileText, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Configure PDF.js worker locally
+pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const turndownService = new TurndownService({
   headingStyle: 'atx',
