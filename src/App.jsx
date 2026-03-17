@@ -1,9 +1,10 @@
+import React, { useState, useRef } from 'react';
 import * as pdfjs from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import Tesseract from 'tesseract.js';
 import TurndownService from 'turndown';
 import { Upload, FileText, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 // Configure PDF.js worker locally
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -13,6 +14,27 @@ const turndownService = new TurndownService({
   codeBlockStyle: 'fenced',
   hr: '---'
 });
+
+// Helper to group PDF items into lines based on Y coordinate
+const groupItemsIntoLines = (items) => {
+  const lines = {};
+  items.forEach(item => {
+    const y = Math.round(item.transform[5]);
+    if (!lines[y]) lines[y] = [];
+    lines[y].push(item);
+  });
+  
+  // Sort lines by Y descending (top to bottom)
+  const sortedY = Object.keys(lines).sort((a, b) => b - a);
+  
+  return sortedY.map(y => {
+    // Sort items within each line by X ascending
+    return lines[y].sort((a, b) => a.transform[4] - b.transform[4])
+      .map(item => item.str)
+      .join(' ')
+      .trim();
+  }).filter(line => line.length > 0);
+};
 
 export default function App() {
   const [file, setFile] = useState(null);
@@ -75,25 +97,33 @@ export default function App() {
         setStatus(`Processing page ${i} of ${numPages}...`);
         const page = await pdf.getPage(i);
         
-        // 1. Try standard text extraction
+        // 1. Try standard text extraction with layout awareness
         const textContent = await page.getTextContent();
-        let pageText = textContent.items.map(item => item.str).join(' ');
+        const lines = groupItemsIntoLines(textContent.items);
+        let pageMarkdown = '';
 
-        // 2. If text is sparse or missing, use OCR
-        if (pageText.trim().length < 50) {
+        if (lines.length > 5) {
+          // Heuristic-based formatting
+          pageMarkdown = lines.map(line => {
+             const trimmedLine = line.trim();
+             // Header detection (simple: short line, no trailing period)
+             if (trimmedLine.length < 60 && !trimmedLine.endsWith('.') && !trimmedLine.endsWith(',')) {
+               return `## ${trimmedLine}`;
+             }
+             // Bullet point detection
+             if (trimmedLine.startsWith('•') || trimmedLine.startsWith('-')) {
+               return `- ${trimmedLine.substring(1).trim()}`;
+             }
+             return trimmedLine;
+          }).join('\n\n');
+        } else {
+          // 2. If text is sparse, assume it might be an image/scanned page and use OCR
           setStatus(`Using OCR for page ${i}...`);
-          pageText = await extractTextWithOCR(page);
+          const ocrText = await extractTextWithOCR(page);
+          pageMarkdown = ocrText;
         }
 
-        // Simple formatting logic (could be improved with more complex heuristics)
-        const lines = pageText.split('\n');
-        const formattedPage = lines.map(line => {
-             if (line.trim().length === 0) return '';
-             if (line.length < 50 && !line.endsWith('.')) return `### ${line}\n`;
-             return line;
-        }).join('\n\n');
-
-        fullMarkdown += `## Page ${i}\n\n${formattedPage}\n\n---\n\n`;
+        fullMarkdown += `### Page ${i}\n\n${pageMarkdown}\n\n---\n\n`;
         setProgress((i / numPages) * 100);
       }
 
